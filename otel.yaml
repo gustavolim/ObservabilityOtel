@@ -1,0 +1,58 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: "0.0.0.0:4318"
+      grpc:
+        endpoint: "0.0.0.0:4317"
+
+processors:
+  batch: {}
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 2s
+    override: false
+    system:
+      resource_attributes:
+        os.description:
+          enabled: true
+        host.arch:
+          enabled: true
+        host.cpu.vendor.id:
+          enabled: true
+        host.cpu.family:
+          enabled: true
+        host.cpu.model.id:
+          enabled: true
+        host.cpu.model.name:
+          enabled: true
+        host.cpu.stepping:
+          enabled: true
+        host.cpu.cache.l2.size:
+          enabled: true
+
+exporters:
+  datadog/exporter:
+    api:
+      site: "us5.datadoghq.com"
+      key: "217a004c2680bade6abf5f4d8425e635"  # Substitua pela sua chave da Datadog
+
+connectors:
+  datadog/connector: {}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [datadog/connector, datadog/exporter]
+
+    metrics:
+      receivers: [datadog/connector, otlp]
+      processors: [batch]
+      exporters: [datadog/exporter]
+
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [datadog/exporter]
