@@ -7,11 +7,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="MyCompanyObservability\**" />
+    <Content Remove="MyCompanyObservability\**" />
+    <EmbeddedResource Remove="MyCompanyObservability\**" />
+    <None Remove="MyCompanyObservability\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\..\mnt\data\MyCompanyObservability\MyCompanyObservability.csproj" />
+    <ProjectReference Include="MyCompanyObservability\MyCompanyObservability.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,49 +1,95 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using OpenTelemetry;
+using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
-using Microsoft.Extensions.Logging;
-using System;
 using OpenTelemetry.Logs;
-using OpenTelemetry.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using OpenTelemetry.Exporter;
+using System.Collections.Generic;
+using System;
 
-namespace MyCompany.Observability;
-
-public static class ObservabilityExtensions
+namespace MyCompany.Observability
 {
-    public static IServiceCollection AddMyCompanyObservability(this IServiceCollection services, IConfiguration configuration)
+    public static class ObservabilityExtensions
     {
-        var serviceName = configuration["Observability:ServiceName"] ?? "MyService";
-        var otlpEndpoint = configuration["Observability:OtlpEndpoint"] ?? "http://localhost:4317";
-        var resourceBuilder = ResourceBuilder.CreateDefault().AddService(serviceName);
-
-        // Adiciona OpenTelemetry para Tracing e Metrics
-        services.AddOpenTelemetry()
-            .ConfigureResource(resource => resource.AddService(serviceName))
-            .WithTracing(tracing => tracing
-                .AddAspNetCoreInstrumentation()
-                .AddHttpClientInstrumentation()
-                .AddOtlpExporter(opt => opt.Endpoint = new Uri(otlpEndpoint))
-            )
-            .WithMetrics(metrics => metrics
-                .AddRuntimeInstrumentation()
-                .AddAspNetCoreInstrumentation()
-                .AddHttpClientInstrumentation()
-                .AddOtlpExporter(opt => opt.Endpoint = new Uri(otlpEndpoint))
-            );
-
-        // Adiciona OpenTelemetry para Logging
-        services.AddLogging(logging =>
+        public static IServiceCollection AddMyCompanyObservability(this IServiceCollection services, IConfiguration config)
         {
-            logging.AddOpenTelemetry(logging =>
-            {
-                logging.SetResourceBuilder(resourceBuilder);
-                logging.AddOtlpExporter(opt => opt.Endpoint = new Uri(otlpEndpoint));
-            });
-        });
+            var serviceName = config["Observability:ServiceName"] ?? "myapp";
+            var environment = config["Observability:Environment"] ?? "dev";
+            var otlpEndpoint = config["Observability:OtlpEndpoint"] ?? "http://localhost:4317";
 
-        return services;
+            var resourceBuilder = ResourceBuilder.CreateDefault()
+                .AddService(serviceName)
+                .AddAttributes(new[]
+                {
+                    new KeyValuePair<string, object>("environment", environment),
+                    new KeyValuePair<string, object>("version", "1.0.0")
+                });
+
+            services.AddOpenTelemetry()
+                // TRACES
+                .WithTracing(builder =>
+                {
+                    builder
+                        .SetResourceBuilder(resourceBuilder)
+                        .AddAspNetCoreInstrumentation(options =>
+                        {
+                            options.Filter = httpContext =>
+                                !httpContext.Request.Path.StartsWithSegments("/healthcheck");
+                            options.EnrichWithHttpRequest = (activity, request) =>
+                            {
+                                activity.SetTag("http.client_ip", request.HttpContext.Connection.RemoteIpAddress);
+                            };
+                        })
+                        .AddHttpClientInstrumentation()
+                        .AddOtlpExporter(o =>
+                        {
+                            o.Endpoint = new Uri(otlpEndpoint);
+                            o.Protocol = OtlpExportProtocol.Grpc;
+                        });
+                })
+
+                // METRICS
+                .WithMetrics(builder =>
+                {
+                    builder
+                        .SetResourceBuilder(resourceBuilder)
+                        .AddRuntimeInstrumentation()
+                        .AddHttpClientInstrumentation()
+                        .AddAspNetCoreInstrumentation()
+                        .AddOtlpExporter(o =>
+                        {
+                            o.Endpoint = new Uri(otlpEndpoint);
+                            o.Protocol = OtlpExportProtocol.Grpc;
+                        });
+                });
+
+            // LOGS
+            services.AddLogging(logging =>
+            {
+                logging.ClearProviders();
+                logging.AddOpenTelemetry(options =>
+                {
+                    options.IncludeFormattedMessage = true;
+                    options.IncludeScopes = true;
+                    options.ParseStateValues = true;
+                    options.SetResourceBuilder(resourceBuilder);
+                    options.AddOtlpExporter(o =>
+                    {
+                        o.Endpoint = new Uri(otlpEndpoint);
+                        o.Protocol = OtlpExportProtocol.Grpc;
+                    });
+                });
+            });
+
+            // Loga as configurações na saída do console
+            Console.WriteLine($"OpenTelemetry Config:");
+            Console.WriteLine($"- Service: {serviceName}");
+            Console.WriteLine($"- Environment: {environment}");
+            Console.WriteLine($"- OTLP Endpoint: {otlpEndpoint}");
+
+            return services;
+        }
     }
 }
